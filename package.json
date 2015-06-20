@@ -1,0 +1,25 @@
+{
+  "author": "Eldar Gabdullin <eldargab@gmail.com>",
+  "name": "easy-streaming",
+  "description": "Streaming tools",
+  "keywords": [
+    "stream",
+  ],
+  "version": "0.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://eldargab@github.com/eldargab/sane-streaming.git"
+  },
+  "main": "./stream",
+  "dependencies": {
+    "go-async": "^0.0.0"
+  },
+  "devDependencies": {
+    "mocha": "^2.2.5",
+    "should": "^6.0.3"
+  },
+  "license": "MIT",
+  "scripts": {
+    "test": "mocha"
+  }
+}
