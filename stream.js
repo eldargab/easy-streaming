@@ -1,5 +1,8 @@
 'use strict'
 
+var go = require('go-async')
+var StringDecoder = require('string_decoder').StringDecoder
+
 module.exports = Stream
 
 function Stream(block) {
@@ -13,7 +16,7 @@ Stream.prototype.read = function() {
 
   var ret = new go.Future
 
-  this.read = ret
+  this.req = ret
 
   if (!this.started) {
     this.start()
@@ -36,11 +39,11 @@ Stream.prototype.start = function() {
   var self = this
 
   function write(data) {
-    var read = self.read
-    if (!read) throw new Error('Backpressure protocol was violated by the source')
-    self.read = null
-    read.done(null, data == null ? null : data)
-    if (self.read) return
+    var req = self.req
+    if (!req) throw new Error('Backpressure protocol was violated by the source')
+    self.req = null
+    req.done(null, data == null ? null : data)
+    if (self.req) return
     return self.lock = new go.Future
   }
 
@@ -48,17 +51,8 @@ Stream.prototype.start = function() {
 
   this.done.next(function(err) {
     self.closed = true
-    self.read && self.read.done(err)
+    self.req && self.req.done(err)
   })
-}
-
-Stream.prototype[Symbol.iterator] = function() {
-  var self = this
-  return {
-    next: function() {
-      return {value: self.read(), done: self.closed}
-    }
-  }
 }
 
 /**
@@ -92,8 +86,8 @@ Stream.sink = function(s, writable) {
 
   return go(function*() {
     try {
-      for(var chunk of s) {
-        chunk = yield chunk
+      var chunk
+      while(chunk = yield s.read()) {
         if (error) throw error
         var drain = writable.write(chunk)
         if (drain) continue
@@ -147,6 +141,7 @@ Stream.sanitize = function(readable) {
         readable.resume()
       }
     } catch(e) {
+      // The intent is to destroy only when error/abortion occured
       received.destroy && received.destroy()
       throw e
     }
@@ -184,7 +179,7 @@ Stream.pipe = function(readable, writable) {
     ret.done(err)
   }
 
-  // and finally :)
+  // and finally
   readable.pipe(writable)
 
   return ret
@@ -209,10 +204,70 @@ Stream.pipe = function(readable, writable) {
 Stream.paste = function(write, s) {
   return go(function*() {
     try {
-      for(var chunk of s) {
+      var chunk
+      while(undefined !== (chunk = yield s.read())) {
         chunk = yield chunk
         yield write(chunk)
       }
+    } finally {
+      s.close()
+    }
+  })
+}
+
+/**
+ * Consume and buffer the entire contents of given stream
+ *
+ * @param  {Stream} s
+ * @param  {String} [opts.encoding] - When given, will buffer to a string instead of Buffer
+ * @param {Number} [opts.limit] - Maximum number of bytes allowed to buffer
+ * @return {Buffer|String}
+ */
+
+Stream.buffer = function(s, opts) {
+  opts = opts || {}
+
+  var binary = !opts.encoding
+  var length = 0
+  var push, end
+
+  if (binary) {
+    var chunks = []
+
+    push = function(chunk) {
+      chunks.push(chunk)
+    }
+
+    end = function() {
+      return Buffer.concat(chunks, length)
+    }
+  } else {
+    var decoder = new StringDecoder(opts.encoding)
+    var str = ''
+
+    push = function(chunk) {
+      str += decoder.write(chunk)
+    }
+
+    end = function() {
+      return str + decoder.end()
+    }
+  }
+
+  return go(function*() {
+    try {
+      var chunk
+      while(chunk = yield s.read()) {
+        chunk = yield chunk
+        length += chunk.length
+        if (opts.limit < length) {
+          var err = new Error('The stream size exceeded the allowed limit')
+          err.limit = opts.limit
+          throw err
+        }
+        push(chunk)
+      }
+      return end()
     } finally {
       s.close()
     }
