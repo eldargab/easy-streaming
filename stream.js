@@ -49,7 +49,7 @@ Stream.prototype.start = function() {
 
   this.done = go.run(this.block(write))
 
-  this.done.next(function(err) {
+  this.done.get(function(err) {
     self.closed = true
     self.req && self.req.done(err)
   })
