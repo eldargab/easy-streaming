@@ -12,7 +12,7 @@
   },
   "main": "./stream",
   "dependencies": {
-    "go-async": "^0.0.0"
+    "go-async": "eldargab/go-async"
   },
   "devDependencies": {
     "benchmark": "^1.0.0",

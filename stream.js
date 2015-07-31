@@ -12,17 +12,24 @@ function Stream(block) {
 }
 
 Stream.prototype.read = function() {
-  if (this.closed) return
-
   var ret = new go.Future
+
+  if (this.closed) {
+    ret.done(new Error('The stream was closed'))
+    return ret
+  }
+
+  if (this.req) {
+    ret.done(new Error('Only one pending read is allowed'))
+    return ret
+  }
 
   this.req = ret
 
-  if (!this.started) {
+  if (this.started) {
+    this.lock && this.lock.done()
+  } else {
     this.start()
-  } else if (this.lock) {
-    if (this.lock.ready) throw new Error('Only one pending read is allowed')
-    this.lock.done()
   }
 
   return ret
@@ -42,6 +49,7 @@ Stream.prototype.start = function() {
     var req = self.req
     if (!req) throw new Error('Backpressure protocol was violated by the source')
     self.req = null
+    self.lock = null
     req.done(null, data == null ? null : data)
     if (self.req) return
     return self.lock = new go.Future
