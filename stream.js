@@ -68,10 +68,10 @@ Stream.prototype.start = function() {
  *
  * @param  {Stream}
  * @param  {Writable}
- * @return {Future}
+ * @return {AsyncBlock}
  */
 
-Stream.sink = function(s, writable) {
+Stream.sink = function*(s, writable) {
   var error
     , resume
     , finished = new go.Future
@@ -92,24 +92,22 @@ Stream.sink = function(s, writable) {
     finished.done()
   })
 
-  return go(function*() {
-    try {
-      var chunk
-      while(chunk = yield s.read()) {
-        if (error) throw error
-        var drain = writable.write(chunk)
-        if (drain) continue
-        yield resume = new go.Future
-      }
+  try {
+    var chunk
+    while(chunk = yield s.read()) {
       if (error) throw error
-      writable.end()
-      yield finished
-    } catch(e) {
-      s.close()
-      writable.destroy && writable.destroy()
-      throw e
+      var drain = writable.write(chunk)
+      if (drain) continue
+      yield resume = new go.Future
     }
-  })
+    if (error) throw error
+    writable.end()
+    yield finished
+  } catch(e) {
+    s.close()
+    writable.destroy && writable.destroy()
+    throw e
+  }
 }
 
 /**
@@ -199,28 +197,26 @@ Stream.pipe = function(readable, writable) {
  *
  * Example:
  *    new Stream(function(write) {
- *      Stream.paste(write, header)
- *      Stream.paste(write, body)
+ *      yield Stream.paste(write, header)
+ *      yield Stream.paste(write, body)
  *    })
  *
  *
  * @param  {Function}
  * @param  {Stream}
- * @return {Future}
+ * @return {AsyncBlock}
  */
 
-Stream.paste = function(write, s) {
-  return go(function*() {
-    try {
-      var chunk
-      while(undefined !== (chunk = yield s.read())) {
-        chunk = yield chunk
-        yield write(chunk)
-      }
-    } finally {
-      s.close()
+Stream.paste = function*(write, s) {
+  try {
+    var chunk
+    while(undefined !== (chunk = yield s.read())) {
+      chunk = yield chunk
+      yield write(chunk)
     }
-  })
+  } finally {
+    s.close()
+  }
 }
 
 /**
@@ -229,10 +225,10 @@ Stream.paste = function(write, s) {
  * @param  {Stream} s
  * @param  {String} [opts.encoding] - When given, will buffer to a string instead of Buffer
  * @param {Number} [opts.limit] - Maximum number of bytes allowed to buffer
- * @return {Buffer|String}
+ * @return {AsyncBlock(Buffer | String)}
  */
 
-Stream.buffer = function(s, opts) {
+Stream.buffer = function*(s, opts) {
   opts = opts || {}
 
   var binary = !opts.encoding
@@ -262,22 +258,20 @@ Stream.buffer = function(s, opts) {
     }
   }
 
-  return go(function*() {
-    try {
-      var chunk
-      while(chunk = yield s.read()) {
-        chunk = yield chunk
-        length += chunk.length
-        if (opts.limit < length) {
-          var err = new Error('The stream size exceeded the allowed limit')
-          err.limit = opts.limit
-          throw err
-        }
-        push(chunk)
+  try {
+    var chunk
+    while(chunk = yield s.read()) {
+      chunk = yield chunk
+      length += chunk.length
+      if (opts.limit < length) {
+        var err = new Error('The stream size exceeded the allowed limit')
+        err.limit = opts.limit
+        throw err
       }
-      return end()
-    } finally {
-      s.close()
+      push(chunk)
     }
-  })
+    return end()
+  } finally {
+    s.close()
+  }
 }
